@@ -145,6 +145,89 @@ class EnrollmentController extends Controller
         }
     }
 
+    public function update(Request $request, $id)
+    {
+        $validated = $request->validate([
+
+            // Student (optional update)
+            'student_name'  => 'sometimes|min:3|max:100',
+            'email'         => 'sometimes|email',
+
+            // Course (optional update)
+            'course_name'   => 'sometimes|min:3|max:120',
+            'credits'       => 'sometimes|integer|min:1|max:6',
+
+            // Enrollment
+            'academic_year' => 'required|regex:/^\d{4}\/\d{4}$/',
+            'semester'      => 'required|in:GANJIL,GENAP',
+            'status'        => 'required|in:DRAFT,SUBMITTED,APPROVED,REJECTED',
+        ]);
+
+        try {
+            $result = DB::transaction(function () use ($validated, $id) {
+
+                $enrollment = Enrollment::with(['student', 'course'])->findOrFail($id);
+
+                // Update Enrollment
+                $enrollment->update([
+                    'academic_year' => $validated['academic_year'],
+                    'semester'      => $validated['semester'],
+                    'status'        => $validated['status'],
+                ]);
+
+                // Update student jika ada
+                if (isset($validated['student_name']) || isset($validated['email'])) {
+                    $enrollment->student->update([
+                        'name'  => $validated['student_name'] ?? $enrollment->student->name,
+                        'email' => $validated['email'] ?? $enrollment->student->email,
+                    ]);
+                }
+
+                // Update course jika ada
+                if (isset($validated['course_name']) || isset($validated['credits'])) {
+                    $enrollment->course->update([
+                        'name'    => $validated['course_name'] ?? $enrollment->course->name,
+                        'credits' => $validated['credits'] ?? $enrollment->course->credits,
+                    ]);
+                }
+
+                return $enrollment;
+            });
+
+            return response()->json([
+                'message' => 'Enrollment updated successfully',
+                'data'    => $result,
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Update failed',
+                'error'   => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function destroy($id)
+    {
+        try {
+
+            $enrollment = Enrollment::findOrFail($id);
+
+            $enrollment->delete(); // soft delete
+
+            return response()->json([
+                'message' => 'Enrollment deleted successfully',
+            ]);
+
+        } catch (\Exception $e) {
+
+            return response()->json([
+                'message' => 'Delete failed',
+                'error'   => $e->getMessage(),
+            ], 500);
+        }
+    }
+
     public function export(Request $request)
     {
         $fileName = 'enrollments.csv';
