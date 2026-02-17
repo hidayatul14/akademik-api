@@ -18,8 +18,10 @@ class EnrollmentController extends Controller
                 'enrollments.id',
                 'students.nim',
                 'students.name as student_name',
+                'students.email',
                 'courses.code as course_code',
                 'courses.name as course_name',
+                'courses.credits',
                 'enrollments.academic_year',
                 'enrollments.semester',
                 'enrollments.status'
@@ -87,48 +89,57 @@ class EnrollmentController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
+            'student_id'    => 'nullable|exists:students,id',
+            'nim'           => 'nullable|digits_between:8,12',
+            'student_name'  => 'required_without:student_id',
+            'email'         => 'required_without:student_id|email',
 
-            // STUDENT
-            'nim'           => 'required|digits_between:8,12|unique:students,nim',
-            'student_name'  => 'required|min:3|max:100',
-            'email'         => 'required|email|unique:students,email',
+            'course_id'     => 'nullable|exists:courses,id',
+            'course_code'   => 'required_without:course_id',
+            'course_name'   => 'required_without:course_id',
+            'credits'       => 'required_without:course_id|integer|min:1|max:6',
 
-            // COURSE
-            'course_code'   => ['required', 'regex:/^[A-Z]{2,4}[0-9]{3}$/', 'unique:courses,code'],
-            'course_name'   => 'required|min:3|max:120',
-            'credits'       => 'required|integer|min:1|max:6',
-
-            // ENROLLMENT
-            'academic_year' => 'required|regex:/^\d{4}\/\d{4}$/',
+            'academic_year' => 'required',
             'semester'      => 'required|in:GANJIL,GENAP',
             'status'        => 'required|in:DRAFT,SUBMITTED,APPROVED,REJECTED',
         ]);
 
         try {
+            $result = DB::transaction(function () use ($request) {
 
-            $result = DB::transaction(function () use ($validated) {
+                if ($request->student_id) {
+                    $studentId = $request->student_id;
+                } else {
+                    $student = Student::updateOrCreate(
+                        ['nim' => $request->nim],
+                        [
+                            'name'  => $request->student_name,
+                            'email' => $request->email,
+                        ]
+                    );
+                    $studentId = $student->id;
+                }
 
-                $student = Student::create([
-                    'nim'   => $validated['nim'],
-                    'name'  => $validated['student_name'],
-                    'email' => $validated['email'],
+                if ($request->course_id) {
+                    $courseId = $request->course_id;
+                } else {
+                    $course = Course::updateOrCreate(
+                        ['code' => $request->course_code],
+                        [
+                            'name'    => $request->course_name,
+                            'credits' => $request->credits,
+                        ]
+                    );
+                    $courseId = $course->id;
+                }
+
+                Enrollment::create([
+                    'student_id'    => $studentId,
+                    'course_id'     => $courseId,
+                    'academic_year' => $request->academic_year,
+                    'semester'      => $request->semester,
+                    'status'        => $request->status,
                 ]);
-
-                $course = Course::create([
-                    'code'    => $validated['course_code'],
-                    'name'    => $validated['course_name'],
-                    'credits' => $validated['credits'],
-                ]);
-
-                $enrollment = Enrollment::create([
-                    'student_id'    => $student->id,
-                    'course_id'     => $course->id,
-                    'academic_year' => $validated['academic_year'],
-                    'semester'      => $validated['semester'],
-                    'status'        => $validated['status'],
-                ]);
-
-                return $enrollment;
             });
 
             return response()->json([
@@ -137,7 +148,6 @@ class EnrollmentController extends Controller
             ], 201);
 
         } catch (\Exception $e) {
-
             return response()->json([
                 'message' => 'Transaction failed',
                 'error'   => $e->getMessage(),
@@ -286,4 +296,24 @@ class EnrollmentController extends Controller
             "Content-Disposition" => "attachment; filename={$fileName}",
         ]);
     }
+
+    public function stats()
+    {
+        DB::disableQueryLog();
+
+        $total = Enrollment::count();
+
+        $statuses = Enrollment::select('status', DB::raw('count(*) as total'))
+            ->groupBy('status')
+            ->pluck('total', 'status');
+
+        return response()->json([
+            'total'     => $total,
+            'approved'  => $statuses['APPROVED'] ?? 0,
+            'draft'     => $statuses['DRAFT'] ?? 0,
+            'rejected'  => $statuses['REJECTED'] ?? 0,
+            'submitted' => $statuses['SUBMITTED'] ?? 0,
+        ]);
+    }
+
 }
