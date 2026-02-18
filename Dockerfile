@@ -9,7 +9,7 @@ WORKDIR /var/www
 
 COPY . .
 
-RUN composer install --no-dev --optimize-autoloader
+RUN composer install 
 
 # Generate key
 RUN php artisan key:generate
