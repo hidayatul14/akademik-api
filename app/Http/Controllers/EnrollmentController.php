@@ -78,10 +78,13 @@ class EnrollmentController extends Controller
         }
 
         // 🔄 SORT
-        $sortBy  = $request->sort_by ?? 'enrollments.id';
-        $sortDir = $request->sort_dir ?? 'asc';
-
-        $query->orderBy($sortBy, $sortDir);
+        if ($request->sorts) {
+            foreach ($request->sorts as $sort) {
+                $query->orderBy($sort['field'], $sort['dir']);
+            }
+        } else {
+            $query->orderBy('enrollments.id', 'asc');
+        }
 
         return $query->simplePaginate($request->page_size ?? 10);
     }
