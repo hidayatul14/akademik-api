@@ -33,3 +33,7 @@ Route::get('/test-db', function () {
         ]);
     }
 });
+
+Route::get('/check-route', function () {
+    return response()->json(['status' => 'route active']);
+});
