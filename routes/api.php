@@ -3,6 +3,7 @@
 use App\Http\Controllers\CourseController;
 use App\Http\Controllers\EnrollmentController;
 use App\Http\Controllers\StudentController;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/enrollments', [EnrollmentController::class, 'store']);
@@ -18,3 +19,17 @@ Route::apiResource('students', StudentController::class);
 Route::get('/courses/search', [CourseController::class, 'search']);
 Route::apiResource('courses', CourseController::class);
 
+Route::get('/test-db', function () {
+    try {
+        DB::connection()->getPdo();
+        return response()->json([
+            "status" => "success",
+            "message" => "Database connected!"
+        ]);
+    } catch (\Exception $e) {
+        return response()->json([
+            "status" => "error",
+            "message" => $e->getMessage()
+        ]);
+    }
+});
