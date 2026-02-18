@@ -21,9 +21,6 @@ COPY . .
 # Install dependencies
 RUN composer install --no-dev --optimize-autoloader
 
-# Generate key
-RUN php artisan key:generate
-
 # Expose port
 EXPOSE 10000
 
