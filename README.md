@@ -1,59 +1,135 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+🎓 Enrollment Academic System
+Full-stack Academic Enrollment Management System built using:
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+- Backend: Laravel (PHP 8.4.12)
+- Frontend: React + Vite + TypeScript
+- Database: PostgreSQL
+- Styling: Tailwind CSS
+This project was developed as a technical test to demonstrate scalable backend architecture, efficient database design, and clean frontend implementation.
 
-## About Laravel
+🚀 Overview
+Enrollment Academic System is designed to manage:
+- Students
+- Courses
+- Enrollments
+- Real-time Dashboard Analytics
+- CSV Export for large datasets
+The system supports large-scale data (millions of enrollment records) with optimized query performance.
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+🛠 Tech Stack
+- Backend :
+Laravel
+PHP 8.4.12
+PostgreSQL
+Eloquent ORM
+Database Transactions
+Chunked CSV Streaming
+Advanced Filtering Engine
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+- Frontend :
+React (Vite)
+TypeScript
+Tailwind CSS
+Recharts (Data Visualization)
+React Icons
+Axios
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+✨ Features
+<img width="1919" height="1086" alt="image" src="https://github.com/user-attachments/assets/eed3c1cb-66f8-403a-9119-84743a307eeb" />
+📊 Dashboard
+- Total Enrollment count
+- Approved / Draft / Rejected / Submitted stats
+- Pie chart status distribution
+- Real-time stats API
 
-## Learning Laravel
+<img width="1918" height="1075" alt="image" src="https://github.com/user-attachments/assets/d37510f4-4409-44e2-b049-7e09e11680cd" />
+📋 Enrollment Management
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
+- Server-side pagination
+- Advanced filtering (Status, Semester)
+- Global search (NIM, Student Name, Course Code)
+- Dynamic sorting per column
+- Create enrollment (new or existing Student/Course)
+- Edit enrollment
+- Soft delete
+- CSV export (streamed for performance)
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+<img width="1919" height="1087" alt="image" src="https://github.com/user-attachments/assets/2736a5ac-8211-4b02-a056-6600499eb2c8" />
+👨‍🎓 Student Management
 
-## Laravel Sponsors
+- Full CRUD
+- Search by NIM / Name / Email
+- Modal-based create/edit
+- Pagination
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+<img width="1919" height="1082" alt="image" src="https://github.com/user-attachments/assets/21352218-f0bf-4845-8b1c-2ad40042c916" />
+📚 Course Management
 
-### Premium Partners
+- Full CRUD
+- Search by Code / Name
+- Modal-based create/edit
+- Pagination
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+🧪 API Endpoints
+1. Enrollment
+- GET    /api/enrollments
+- POST   /api/enrollments
+- PUT    /api/enrollments/{id}
+- DELETE /api/enrollments/{id}
+- GET    /api/enrollments/export
+- GET    /api/enrollments/stats
 
-## Contributing
+2. Students
+- GET    /api/students
+- POST   /api/students
+- PUT    /api/students/{id}
+- DELETE /api/students/{id}
+- GET    /api/students/search
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+3. Courses
+- GET    /api/courses
+- POST   /api/courses
+- PUT    /api/courses/{id}
+- DELETE /api/courses/{id}
+- GET    /api/courses/search
 
-## Code of Conduct
+🔧 Installation Guide
+- Backend Setup
+- composer install
+- cp .env.example .env
+- php artisan key:generate
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+Update .env for PostgreSQL:
+- DB_CONNECTION=pgsql
+- DB_HOST=127.0.0.1
+- DB_PORT=5432
+- DB_DATABASE=your_database
+- DB_USERNAME=your_username
+- DB_PASSWORD=your_password
 
-## Security Vulnerabilities
+Run migration & seeder:
+- php artisan migrate --seed
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+Start backend:
+- php artisan serve
 
-## License
+Frontend Setup :
+- npm install
+- npm run dev
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+📊 CSV Export
+Streamed response
+Memory efficient
+Handles large datasets
+Chunked database reading
+
+🔐 Data Integrity Strategy
+Enrollment creation logic:
+- If student_id exists → use existing student
+- If not → auto create/update student
+- Same logic applied to course
+- All wrapped in database transaction
+Ensures:
+- No duplicate records
+- Atomic operations
+- Data consistency
