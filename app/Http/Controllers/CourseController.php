@@ -1,56 +1,58 @@
 <?php
+
 namespace App\Http\Controllers;
 
+use App\Http\Requests\StoreCourseRequest;
+use App\Http\Requests\UpdateCourseRequest;
 use App\Models\Course;
 use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
 
 class CourseController extends Controller
 {
-
     public function index(Request $request)
     {
         return Course::query()
             ->when($request->search, function ($q) use ($request) {
-                $q->where('code', 'ilike', "%{$request->search}%")
-                    ->orWhere('name', 'ilike', "%{$request->search}%");
+                $q->whereLike('code', "%{$request->search}%")
+                    ->orWhereLike('name', "%{$request->search}%");
             })
             ->paginate(10);
     }
 
-    public function store(Request $request)
+    public function store(StoreCourseRequest $request)
     {
-        $validated = $request->validate([
-            'code'    => 'required|alpha_num|max:10|unique:courses,code',
-            'name'    => 'required|string|max:100',
-            'credits' => 'required|integer|min:1|max:6',
-        ]);
+        $validated = $request->validated();
 
-        return Course::create($validated);
+        return response()->json([
+            'message' => 'Course created successfully',
+            'data' => Course::create($validated),
+        ], 201);
     }
 
-    public function update(Request $request, $id)
+    public function update(UpdateCourseRequest $request, $id)
     {
         $course = Course::findOrFail($id);
 
-        $validated = $request->validate([
-            'code'    => [
-                'required',
-                'alpha_num',
-                Rule::unique('courses')->ignore($course->id),
-            ],
-            'name'    => 'required|string|max:100',
-            'credits' => 'required|integer|min:1|max:6',
-        ]);
+        $validated = $request->validated();
 
         $course->update($validated);
 
-        return $course;
+        return response()->json([
+            'message' => 'Course updated successfully',
+            'data' => $course,
+        ]);
     }
 
     public function destroy($id)
     {
         $course = Course::findOrFail($id);
+
+        if ($course->enrollments()->exists()) {
+            return response()->json([
+                'message' => 'Course cannot be deleted while enrollment records still reference it.',
+            ], 409);
+        }
+
         $course->delete();
 
         return response()->json(['message' => 'Deleted successfully']);
@@ -60,11 +62,10 @@ class CourseController extends Controller
     {
         return Course::query()
             ->when($request->search, function ($q) use ($request) {
-                $q->where('code', 'ilike', "%{$request->search}%")
-                    ->orWhere('name', 'ilike', "%{$request->search}%");
+                $q->whereLike('code', "%{$request->search}%")
+                    ->orWhereLike('name', "%{$request->search}%");
             })
             ->limit(10)
             ->get(['id', 'code', 'name']);
     }
-
 }

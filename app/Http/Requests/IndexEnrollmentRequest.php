@@ -1,0 +1,73 @@
+<?php
+
+namespace App\Http\Requests;
+
+use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\Validator;
+
+class IndexEnrollmentRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return true;
+    }
+
+    public function rules(): array
+    {
+        $fields = [
+            'student_nim', 'student_name', 'student_email', 'course_code', 'course_name', 'credits',
+            'academic_year', 'semester', 'status', 'students.nim', 'students.name', 'students.email',
+            'courses.code', 'courses.name', 'courses.credits', 'enrollments.academic_year',
+            'enrollments.semester', 'enrollments.status',
+        ];
+
+        return [
+            'page' => ['sometimes', 'integer', 'min:1'],
+            'page_size' => ['sometimes', 'integer', 'min:1', 'max:100'],
+            'search' => ['sometimes', 'nullable', 'string', 'max:100'],
+            'logic' => ['sometimes', Rule::in(['AND', 'OR', 'and', 'or'])],
+            'sorts' => ['sometimes', 'array', 'max:9'],
+            'sorts.*.field' => ['required', 'string', Rule::in($fields)],
+            'sorts.*.dir' => ['required', Rule::in(['asc', 'desc', 'ASC', 'DESC'])],
+            'filters' => ['sometimes', 'array', 'max:20'],
+            'filters.*.field' => ['required', 'string', Rule::in($fields)],
+            'filters.*.operator' => ['required', Rule::in(['equal', 'contains', 'startsWith', 'in', 'between'])],
+            'filters.*.value' => ['present'],
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'sorts.*.field.in' => 'The selected sort field is not supported.',
+            'sorts.*.dir.in' => 'Sort direction must be asc or desc.',
+            'filters.*.field.in' => 'The selected filter field is not supported.',
+            'filters.*.operator.in' => 'The selected filter operator is not supported.',
+        ];
+    }
+
+    public function after(): array
+    {
+        return [
+            function (Validator $validator) {
+                foreach ($this->input('filters', []) as $index => $filter) {
+                    $operator = $filter['operator'] ?? null;
+                    $value = $filter['value'] ?? null;
+
+                    if ($operator === 'in' && (! is_array($value) || $value === [])) {
+                        $validator->errors()->add("filters.{$index}.value", 'The in operator requires a non-empty array.');
+                    }
+
+                    if ($operator === 'between' && (! is_array($value) || count($value) !== 2)) {
+                        $validator->errors()->add("filters.{$index}.value", 'The between operator requires exactly two values.');
+                    }
+
+                    if (in_array($operator, ['equal', 'contains', 'startsWith'], true) && ! is_scalar($value)) {
+                        $validator->errors()->add("filters.{$index}.value", 'This operator requires a single value.');
+                    }
+                }
+            },
+        ];
+    }
+}

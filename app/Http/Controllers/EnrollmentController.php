@@ -1,17 +1,228 @@
 <?php
+
 namespace App\Http\Controllers;
 
+use App\Http\Requests\IndexEnrollmentRequest;
+use App\Http\Requests\StoreEnrollmentRequest;
+use App\Http\Requests\UpdateEnrollmentRequest;
 use App\Models\Course;
 use App\Models\Enrollment;
 use App\Models\Student;
-use Illuminate\Http\Request;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
+use Throwable;
 
 class EnrollmentController extends Controller
 {
-    public function index(Request $request)
+    private const FIELD_MAP = [
+        'student_nim' => 'students.nim',
+        'student_name' => 'students.name',
+        'student_email' => 'students.email',
+        'course_code' => 'courses.code',
+        'course_name' => 'courses.name',
+        'credits' => 'courses.credits',
+        'academic_year' => 'enrollments.academic_year',
+        'semester' => 'enrollments.semester',
+        'status' => 'enrollments.status',
+        'students.nim' => 'students.nim',
+        'students.name' => 'students.name',
+        'students.email' => 'students.email',
+        'courses.code' => 'courses.code',
+        'courses.name' => 'courses.name',
+        'courses.credits' => 'courses.credits',
+        'enrollments.academic_year' => 'enrollments.academic_year',
+        'enrollments.semester' => 'enrollments.semester',
+        'enrollments.status' => 'enrollments.status',
+    ];
+
+    public function index(IndexEnrollmentRequest $request)
     {
-        $query = Enrollment::query()
+        $validated = $request->validated();
+        $query = $this->baseQuery();
+
+        $this->applyQueryConstraints($query, $validated);
+
+        if (! empty($validated['sorts'])) {
+            foreach ($validated['sorts'] as $sort) {
+                $query->orderBy(self::FIELD_MAP[$sort['field']], strtolower($sort['dir']));
+            }
+        } else {
+            $query->orderBy('enrollments.id');
+        }
+
+        return $query->paginate((int) ($validated['page_size'] ?? 25));
+    }
+
+    public function store(StoreEnrollmentRequest $request)
+    {
+        $validated = $request->validated();
+
+        try {
+            $enrollment = DB::transaction(function () use ($validated) {
+                $studentId = $validated['student_id'] ?? null;
+                if (! $studentId) {
+                    $studentId = Student::create([
+                        'nim' => $validated['nim'],
+                        'name' => $validated['student_name'],
+                        'email' => $validated['email'],
+                    ])->id;
+                }
+
+                $courseId = $validated['course_id'] ?? null;
+                if (! $courseId) {
+                    $courseId = Course::create([
+                        'code' => $validated['course_code'],
+                        'name' => $validated['course_name'],
+                        'credits' => $validated['credits'],
+                    ])->id;
+                }
+
+                return Enrollment::create([
+                    'student_id' => $studentId,
+                    'course_id' => $courseId,
+                    'academic_year' => $validated['academic_year'],
+                    'semester' => $validated['semester'],
+                    'status' => $validated['status'],
+                ])->load(['student', 'course']);
+            });
+
+            return response()->json([
+                'message' => 'Enrollment created successfully',
+                'data' => $enrollment,
+            ], 201);
+        } catch (QueryException $exception) {
+            report($exception);
+
+            if ($this->isIntegrityViolation($exception)) {
+                return response()->json([
+                    'message' => 'The enrollment or related student/course data already exists.',
+                ], 422);
+            }
+
+            return response()->json(['message' => 'Enrollment could not be created. Please try again.'], 500);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return response()->json(['message' => 'Enrollment could not be created. Please try again.'], 500);
+        }
+    }
+
+    public function update(UpdateEnrollmentRequest $request, $id)
+    {
+        $validated = $request->validated();
+        $enrollment = Enrollment::with(['student', 'course'])->findOrFail($id);
+
+        try {
+            $result = DB::transaction(function () use ($validated, $enrollment) {
+                $enrollment->update([
+                    'academic_year' => $validated['academic_year'],
+                    'semester' => $validated['semester'],
+                    'status' => $validated['status'],
+                ]);
+
+                if (isset($validated['student_name']) || isset($validated['email'])) {
+                    $enrollment->student->update([
+                        'name' => $validated['student_name'] ?? $enrollment->student->name,
+                        'email' => $validated['email'] ?? $enrollment->student->email,
+                    ]);
+                }
+
+                if (isset($validated['course_name']) || isset($validated['credits'])) {
+                    $enrollment->course->update([
+                        'name' => $validated['course_name'] ?? $enrollment->course->name,
+                        'credits' => $validated['credits'] ?? $enrollment->course->credits,
+                    ]);
+                }
+
+                return $enrollment->refresh()->load(['student', 'course']);
+            });
+
+            return response()->json([
+                'message' => 'Enrollment updated successfully',
+                'data' => $result,
+            ]);
+        } catch (QueryException $exception) {
+            report($exception);
+
+            if ($this->isIntegrityViolation($exception)) {
+                return response()->json(['message' => 'The updated data conflicts with an existing record.'], 422);
+            }
+
+            return response()->json(['message' => 'Enrollment could not be updated. Please try again.'], 500);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return response()->json(['message' => 'Enrollment could not be updated. Please try again.'], 500);
+        }
+    }
+
+    public function destroy($id)
+    {
+        $enrollment = Enrollment::findOrFail($id);
+        $enrollment->delete();
+
+        return response()->json(['message' => 'Enrollment deleted successfully']);
+    }
+
+    public function export(IndexEnrollmentRequest $request)
+    {
+        $validated = $request->validated();
+
+        return response()->stream(function () use ($validated) {
+            $handle = fopen('php://output', 'w');
+            fputcsv($handle, ['NIM', 'Nama Mahasiswa', 'Kode MK', 'Nama MK', 'Tahun Ajaran', 'Semester', 'Status']);
+            DB::disableQueryLog();
+
+            $query = $this->baseQuery();
+            $this->applyQueryConstraints($query, $validated);
+
+            $processed = 0;
+            foreach ($query->lazyById(5000, 'enrollments.id', 'id') as $row) {
+                fputcsv($handle, [
+                    $this->csvValue($row->nim),
+                    $this->csvValue($row->student_name),
+                    $this->csvValue($row->course_code),
+                    $this->csvValue($row->course_name),
+                    $this->csvValue($row->academic_year),
+                    $this->csvValue($row->semester),
+                    $this->csvValue($row->status),
+                ]);
+
+                if (++$processed % 5000 === 0) {
+                    flush();
+                }
+            }
+
+            fclose($handle);
+        }, 200, [
+            'Cache-Control' => 'no-store, no-cache',
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename=enrollments.csv',
+            'X-Accel-Buffering' => 'no',
+        ]);
+    }
+
+    public function stats()
+    {
+        DB::disableQueryLog();
+        $total = Enrollment::count();
+        $statuses = Enrollment::select('status', DB::raw('count(*) as total'))
+            ->groupBy('status')
+            ->pluck('total', 'status');
+
+        return response()->json([
+            'total' => $total,
+            'approved' => $statuses['APPROVED'] ?? 0,
+            'draft' => $statuses['DRAFT'] ?? 0,
+            'rejected' => $statuses['REJECTED'] ?? 0,
+            'submitted' => $statuses['SUBMITTED'] ?? 0,
+        ]);
+    }
+
+    private function baseQuery(): Builder
+    {
+        return Enrollment::query()
             ->join('students', 'students.id', '=', 'enrollments.student_id')
             ->join('courses', 'courses.id', '=', 'enrollments.course_id')
             ->select(
@@ -26,297 +237,51 @@ class EnrollmentController extends Controller
                 'enrollments.semester',
                 'enrollments.status'
             );
+    }
 
-        // 🔍 SEARCH
-        if ($request->search) {
-            $query->where(function ($q) use ($request) {
-                $q->where('students.nim', 'ilike', "%{$request->search}%")
-                    ->orWhere('students.name', 'ilike', "%{$request->search}%")
-                    ->orWhere('courses.code', 'ilike', "%{$request->search}%");
-            });
-        }
+    private function applyFilters(Builder $query, array $filters, string $logic): void
+    {
+        $query->where(function (Builder $group) use ($filters, $logic) {
+            foreach ($filters as $filter) {
+                $column = self::FIELD_MAP[$filter['field']];
+                $or = $logic === 'OR';
 
-        // ⚡ ADVANCED FILTER
-        if ($request->filters) {
-
-            $logic = strtoupper($request->logic ?? 'AND');
-
-            $query->where(function ($q) use ($request, $logic) {
-
-                foreach ($request->filters as $filter) {
-
-                    $method = $logic === 'OR' ? 'orWhere' : 'where';
-
-                    switch ($filter['operator']) {
-
-                        case 'equal':
-                            $q->$method($filter['field'], '=', $filter['value']);
-                            break;
-
-                        case 'contains':
-                            $q->$method($filter['field'], 'ilike', "%{$filter['value']}%");
-                            break;
-
-                        case 'startsWith':
-                            $q->$method($filter['field'], 'ilike', "{$filter['value']}%");
-                            break;
-
-                        case 'in':
-                            $q->$method(function ($sub) use ($filter) {
-                                $sub->whereIn($filter['field'], $filter['value']);
-                            });
-                            break;
-
-                        case 'between':
-                            $q->$method(function ($sub) use ($filter) {
-                                $sub->whereBetween($filter['field'], $filter['value']);
-                            });
-                            break;
-                    }
-                }
-            });
-        }
-
-        // 🔄 SORT
-        if ($request->sorts) {
-            foreach ($request->sorts as $sort) {
-                $query->orderBy($sort['field'], $sort['dir']);
+                match ($filter['operator']) {
+                    'equal' => $or ? $group->orWhere($column, $filter['value']) : $group->where($column, $filter['value']),
+                    'contains' => $or ? $group->orWhereLike($column, '%'.$filter['value'].'%') : $group->whereLike($column, '%'.$filter['value'].'%'),
+                    'startsWith' => $or ? $group->orWhereLike($column, $filter['value'].'%') : $group->whereLike($column, $filter['value'].'%'),
+                    'in' => $or ? $group->orWhereIn($column, (array) $filter['value']) : $group->whereIn($column, (array) $filter['value']),
+                    'between' => $or ? $group->orWhereBetween($column, (array) $filter['value']) : $group->whereBetween($column, (array) $filter['value']),
+                };
             }
-        } else {
-            $query->orderBy('enrollments.id', 'asc');
-        }
-
-        return $query->simplePaginate($request->page_size ?? 10);
+        });
     }
 
-    public function store(Request $request)
+    private function applyQueryConstraints(Builder $query, array $validated): void
     {
-        $validated = $request->validate([
-            'student_id'    => 'nullable|exists:students,id',
-            'nim'           => 'nullable|digits_between:8,12',
-            'student_name'  => 'required_without:student_id',
-            'email'         => 'required_without:student_id|email',
-
-            'course_id'     => 'nullable|exists:courses,id',
-            'course_code'   => 'required_without:course_id',
-            'course_name'   => 'required_without:course_id',
-            'credits'       => 'required_without:course_id|integer|min:1|max:6',
-
-            'academic_year' => 'required',
-            'semester'      => 'required|in:GANJIL,GENAP',
-            'status'        => 'required|in:DRAFT,SUBMITTED,APPROVED,REJECTED',
-        ]);
-
-        try {
-            $result = DB::transaction(function () use ($request) {
-
-                if ($request->student_id) {
-                    $studentId = $request->student_id;
-                } else {
-                    $student = Student::updateOrCreate(
-                        ['nim' => $request->nim],
-                        [
-                            'name'  => $request->student_name,
-                            'email' => $request->email,
-                        ]
-                    );
-                    $studentId = $student->id;
-                }
-
-                if ($request->course_id) {
-                    $courseId = $request->course_id;
-                } else {
-                    $course = Course::updateOrCreate(
-                        ['code' => $request->course_code],
-                        [
-                            'name'    => $request->course_name,
-                            'credits' => $request->credits,
-                        ]
-                    );
-                    $courseId = $course->id;
-                }
-
-                Enrollment::create([
-                    'student_id'    => $studentId,
-                    'course_id'     => $courseId,
-                    'academic_year' => $request->academic_year,
-                    'semester'      => $request->semester,
-                    'status'        => $request->status,
-                ]);
+        if (! empty($validated['search'])) {
+            $search = $validated['search'];
+            $query->where(function ($group) use ($search) {
+                $group->whereLike('students.nim', "%{$search}%")
+                    ->orWhereLike('students.name', "%{$search}%")
+                    ->orWhereLike('courses.code', "%{$search}%");
             });
+        }
 
-            return response()->json([
-                'message' => 'Enrollment created successfully',
-                'data'    => $result,
-            ], 201);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'Transaction failed',
-                'error'   => $e->getMessage(),
-            ], 500);
+        if (! empty($validated['filters'])) {
+            $this->applyFilters($query, $validated['filters'], strtoupper($validated['logic'] ?? 'AND'));
         }
     }
 
-    public function update(Request $request, $id)
+    private function isIntegrityViolation(QueryException $exception): bool
     {
-        $validated = $request->validate([
-
-            // Student (optional update)
-            'student_name'  => 'sometimes|min:3|max:100',
-            'email'         => 'sometimes|email',
-
-            // Course (optional update)
-            'course_name'   => 'sometimes|min:3|max:120',
-            'credits'       => 'sometimes|integer|min:1|max:6',
-
-            // Enrollment
-            'academic_year' => 'required|regex:/^\d{4}\/\d{4}$/',
-            'semester'      => 'required|in:GANJIL,GENAP',
-            'status'        => 'required|in:DRAFT,SUBMITTED,APPROVED,REJECTED',
-        ]);
-
-        try {
-            $result = DB::transaction(function () use ($validated, $id) {
-
-                $enrollment = Enrollment::with(['student', 'course'])->findOrFail($id);
-
-                // Update Enrollment
-                $enrollment->update([
-                    'academic_year' => $validated['academic_year'],
-                    'semester'      => $validated['semester'],
-                    'status'        => $validated['status'],
-                ]);
-
-                // Update student jika ada
-                if (isset($validated['student_name']) || isset($validated['email'])) {
-                    $enrollment->student->update([
-                        'name'  => $validated['student_name'] ?? $enrollment->student->name,
-                        'email' => $validated['email'] ?? $enrollment->student->email,
-                    ]);
-                }
-
-                // Update course jika ada
-                if (isset($validated['course_name']) || isset($validated['credits'])) {
-                    $enrollment->course->update([
-                        'name'    => $validated['course_name'] ?? $enrollment->course->name,
-                        'credits' => $validated['credits'] ?? $enrollment->course->credits,
-                    ]);
-                }
-
-                return $enrollment;
-            });
-
-            return response()->json([
-                'message' => 'Enrollment updated successfully',
-                'data'    => $result,
-            ]);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'Update failed',
-                'error'   => $e->getMessage(),
-            ], 500);
-        }
+        return in_array((string) $exception->getCode(), ['23000', '23505'], true);
     }
 
-    public function destroy($id)
+    private function csvValue(mixed $value): string
     {
-        try {
+        $string = (string) $value;
 
-            $enrollment = Enrollment::findOrFail($id);
-
-            $enrollment->delete(); // soft delete
-
-            return response()->json([
-                'message' => 'Enrollment deleted successfully',
-            ]);
-
-        } catch (\Exception $e) {
-
-            return response()->json([
-                'message' => 'Delete failed',
-                'error'   => $e->getMessage(),
-            ], 500);
-        }
+        return preg_match('/^[=+\-@]/', $string) === 1 ? "'{$string}" : $string;
     }
-
-    public function export(Request $request)
-    {
-        $fileName = 'enrollments.csv';
-
-        return response()->stream(function () use ($request) {
-
-            $handle = fopen('php://output', 'w');
-
-            // Header CSV
-            fputcsv($handle, [
-                'NIM',
-                'Nama Mahasiswa',
-                'Kode MK',
-                'Nama MK',
-                'Tahun Ajaran',
-                'Semester',
-                'Status',
-            ]);
-
-            DB::disableQueryLog();
-
-            Enrollment::query()
-                ->join('students', 'students.id', '=', 'enrollments.student_id')
-                ->join('courses', 'courses.id', '=', 'enrollments.course_id')
-                ->select(
-                    'students.nim',
-                    'students.name',
-                    'courses.code',
-                    'courses.name as course_name',
-                    'enrollments.academic_year',
-                    'enrollments.semester',
-                    'enrollments.status'
-                )
-                ->orderBy('enrollments.id')
-                ->chunk(5000, function ($rows) use ($handle) {
-
-                    foreach ($rows as $row) {
-                        fputcsv($handle, [
-                            $row->nim,
-                            $row->name,
-                            $row->code,
-                            $row->course_name,
-                            $row->academic_year,
-                            $row->semester,
-                            $row->status,
-                        ]);
-                    }
-
-                    flush();
-                });
-
-            fclose($handle);
-
-        }, 200, [
-            "Content-Type"        => "text/csv",
-            "Content-Disposition" => "attachment; filename={$fileName}",
-        ]);
-    }
-
-    public function stats()
-    {
-        DB::disableQueryLog();
-
-        $total = Enrollment::count();
-
-        $statuses = Enrollment::select('status', DB::raw('count(*) as total'))
-            ->groupBy('status')
-            ->pluck('total', 'status');
-
-        return response()->json([
-            'total'     => $total,
-            'approved'  => $statuses['APPROVED'] ?? 0,
-            'draft'     => $statuses['DRAFT'] ?? 0,
-            'rejected'  => $statuses['REJECTED'] ?? 0,
-            'submitted' => $statuses['SUBMITTED'] ?? 0,
-        ]);
-    }
-
 }

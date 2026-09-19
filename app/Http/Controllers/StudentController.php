@@ -1,9 +1,11 @@
 <?php
+
 namespace App\Http\Controllers;
 
+use App\Http\Requests\StoreStudentRequest;
+use App\Http\Requests\UpdateStudentRequest;
 use App\Models\Student;
 use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
 
 class StudentController extends Controller
 {
@@ -11,49 +13,47 @@ class StudentController extends Controller
     {
         return Student::query()
             ->when($request->search, function ($q) use ($request) {
-                $q->where('nim', 'ilike', "%{$request->search}%")
-                    ->orWhere('name', 'ilike', "%{$request->search}%");
+                $q->whereLike('nim', "%{$request->search}%")
+                    ->orWhereLike('name', "%{$request->search}%")
+                    ->orWhereLike('email', "%{$request->search}%");
             })
             ->paginate(10);
     }
 
-    public function store(Request $request)
+    public function store(StoreStudentRequest $request)
     {
-        $validated = $request->validate([
-            'nim'   => 'required|digits_between:8,12|unique:students,nim',
-            'name'  => 'required|string|max:100',
-            'email' => 'required|email|unique:students,email',
-        ]);
+        $validated = $request->validated();
 
-        return Student::create($validated);
+        return response()->json([
+            'message' => 'Student created successfully',
+            'data' => Student::create($validated),
+        ], 201);
     }
 
-    public function update(Request $request, $id)
+    public function update(UpdateStudentRequest $request, $id)
     {
         $student = Student::findOrFail($id);
 
-        $validated = $request->validate([
-            'nim'   => [
-                'required',
-                'digits_between:8,12',
-                Rule::unique('students')->ignore($student->id),
-            ],
-            'name'  => 'required|string|max:100',
-            'email' => [
-                'required',
-                'email',
-                Rule::unique('students')->ignore($student->id),
-            ],
-        ]);
+        $validated = $request->validated();
 
         $student->update($validated);
 
-        return $student;
+        return response()->json([
+            'message' => 'Student updated successfully',
+            'data' => $student,
+        ]);
     }
 
     public function destroy($id)
     {
         $student = Student::findOrFail($id);
+
+        if ($student->enrollments()->exists()) {
+            return response()->json([
+                'message' => 'Student cannot be deleted while enrollment records still reference it.',
+            ], 409);
+        }
+
         $student->delete();
 
         return response()->json(['message' => 'Deleted successfully']);
@@ -63,8 +63,8 @@ class StudentController extends Controller
     {
         return Student::query()
             ->when($request->search, function ($q) use ($request) {
-                $q->where('nim', 'ilike', "%{$request->search}%")
-                    ->orWhere('name', 'ilike', "%{$request->search}%");
+                $q->whereLike('nim', "%{$request->search}%")
+                    ->orWhereLike('name', "%{$request->search}%");
             })
             ->limit(10)
             ->get(['id', 'nim', 'name']);

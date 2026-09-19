@@ -1,135 +1,122 @@
-🎓 Enrollment Academic System
-Full-stack Academic Enrollment Management System built using:
+# Academic Enrollment API
 
-- Backend: Laravel (PHP 8.4.12)
-- Frontend: React + Vite + TypeScript
-- Database: PostgreSQL
-- Styling: Tailwind CSS
-This project was developed as a technical test to demonstrate scalable backend architecture, efficient database design, and clean frontend implementation.
+Laravel 12 API for a single-page academic KRS management system. The API is designed for server-side pagination, sorting, searching, advanced filtering, atomic enrollment creation, and large CSV exports.
 
-🚀 Overview
-Enrollment Academic System is designed to manage:
-- Students
-- Courses
-- Enrollments
-- Real-time Dashboard Analytics
-- CSV Export for large datasets
-The system supports large-scale data (millions of enrollment records) with optimized query performance.
+## Requirements
 
-🛠 Tech Stack
-- Backend :
-Laravel
-PHP 8.4.12
-PostgreSQL
-Eloquent ORM
-Database Transactions
-Chunked CSV Streaming
-Advanced Filtering Engine
+- PHP 8.2 or newer
+- Composer 2
+- MySQL 8, MariaDB, or PostgreSQL
+- Required PDO driver for the selected database
 
-- Frontend :
-React (Vite)
-TypeScript
-Tailwind CSS
-Recharts (Data Visualization)
-React Icons
-Axios
+## Local setup
 
-✨ Features
-<img width="1919" height="1086" alt="image" src="https://github.com/user-attachments/assets/eed3c1cb-66f8-403a-9119-84743a307eeb" />
-📊 Dashboard
-- Total Enrollment count
-- Approved / Draft / Rejected / Submitted stats
-- Pie chart status distribution
-- Real-time stats API
+```bash
+composer install
+cp .env.example .env
+php artisan key:generate
+```
 
-<img width="1918" height="1075" alt="image" src="https://github.com/user-attachments/assets/d37510f4-4409-44e2-b049-7e09e11680cd" />
-📋 Enrollment Management
+Configure the database and frontend origins in `.env`:
 
-- Server-side pagination
-- Advanced filtering (Status, Semester)
-- Global search (NIM, Student Name, Course Code)
-- Dynamic sorting per column
-- Create enrollment (new or existing Student/Course)
-- Edit enrollment
-- Soft delete
-- CSV export (streamed for performance)
+```dotenv
+DB_CONNECTION=mysql
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_DATABASE=akademik_api
+DB_USERNAME=root
+DB_PASSWORD=
+CORS_ALLOWED_ORIGINS=http://127.0.0.1:5173,http://localhost:5173
+```
 
-<img width="1919" height="1087" alt="image" src="https://github.com/user-attachments/assets/2736a5ac-8211-4b02-a056-6600499eb2c8" />
-👨‍🎓 Student Management
+Run migrations and start the API:
 
-- Full CRUD
-- Search by NIM / Name / Email
-- Modal-based create/edit
-- Pagination
+```bash
+php artisan migrate
+php artisan serve --host=127.0.0.1 --port=8000
+```
 
-<img width="1919" height="1082" alt="image" src="https://github.com/user-attachments/assets/21352218-f0bf-4845-8b1c-2ad40042c916" />
-📚 Course Management
+## Dataset generation
 
-- Full CRUD
-- Search by Code / Name
-- Modal-based create/edit
-- Pagination
+The scalable seeder accepts a target row count and insert batch size:
 
-🧪 API Endpoints
-1. Enrollment
-- GET    /api/enrollments
-- POST   /api/enrollments
-- PUT    /api/enrollments/{id}
-- DELETE /api/enrollments/{id}
-- GET    /api/enrollments/export
-- GET    /api/enrollments/stats
+```bash
+php artisan academic:seed 5000000 --chunk=5000
+```
 
-2. Students
-- GET    /api/students
-- POST   /api/students
-- PUT    /api/students/{id}
-- DELETE /api/students/{id}
-- GET    /api/students/search
+The command creates 10,000 students, 500 courses, and deterministic enrollment combinations. It uses bulk inserts, actual database IDs, disabled query logging, and bounded batches. The enrollment table must be empty; the command stops instead of silently creating duplicates.
 
-3. Courses
-- GET    /api/courses
-- POST   /api/courses
-- PUT    /api/courses/{id}
-- DELETE /api/courses/{id}
-- GET    /api/courses/search
+Verify the result:
 
-🔧 Installation Guide
-- Backend Setup
-- composer install
-- cp .env.example .env
-- php artisan key:generate
+```sql
+SELECT COUNT(*) FROM enrollments;
+```
 
-Update .env for PostgreSQL:
-- DB_CONNECTION=pgsql
-- DB_HOST=127.0.0.1
-- DB_PORT=5432
-- DB_DATABASE=your_database
-- DB_USERNAME=your_username
-- DB_PASSWORD=your_password
+For a lightweight development dataset, use a smaller count on a fresh database:
 
-Run migration & seeder:
-- php artisan migrate --seed
+```bash
+php artisan academic:seed 1000 --chunk=500
+```
 
-Start backend:
-- php artisan serve
+## Enrollment API
 
-Frontend Setup :
-- npm install
-- npm run dev
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/enrollments` | Paginated list, search, filter, and sort |
+| POST | `/api/enrollments` | Atomic student + course + enrollment create |
+| PUT | `/api/enrollments/{id}` | Update enrollment and optional related data |
+| DELETE | `/api/enrollments/{id}` | Soft-delete enrollment only |
+| GET | `/api/enrollments/export` | Stream all matching records as CSV |
+| GET | `/api/enrollments/stats` | Status totals for the dashboard |
 
-📊 CSV Export
-Streamed response
-Memory efficient
-Handles large datasets
-Chunked database reading
+Student and course CRUD endpoints are available under `/api/students` and `/api/courses`.
 
-🔐 Data Integrity Strategy
-Enrollment creation logic:
-- If student_id exists → use existing student
-- If not → auto create/update student
-- Same logic applied to course
-- All wrapped in database transaction
-Ensures:
-- No duplicate records
-- Atomic operations
-- Data consistency
+### Query parameters
+
+- `page`: page number
+- `page_size`: 1–100
+- `search`: NIM, student name, or course code
+- `logic`: `AND` or `OR`
+- `sorts[index][field|dir]`: ordered multi-column sorting
+- `filters[index][field|operator|value]`: advanced conditions
+
+Public fields and operators are explicitly whitelisted. Raw SQL and arbitrary database identifiers are never accepted.
+
+Supported operators:
+
+- `equal`
+- `contains`
+- `startsWith`
+- `in` with an array value
+- `between` with exactly two values
+
+## Data integrity
+
+Enrollment creation runs inside one `DB::transaction()`. A failure while creating the student, course, or enrollment rolls back the complete operation. The database also enforces uniqueness across:
+
+```text
+student_id + course_id + academic_year + semester
+```
+
+Enrollment deletion uses Laravel soft deletes and preserves student/course master records. Editing related master data from the enrollment form may affect other enrollments referencing the same record; the UI explicitly communicates this.
+
+## Large CSV export
+
+Export applies the same search and filter constraints as the list endpoint. It uses `lazyById()` in batches of 5,000, writes directly to `php://output`, disables proxy buffering, and escapes spreadsheet formula prefixes. It does not call `Enrollment::all()` or build the file in application memory.
+
+## Tests and formatting
+
+```bash
+php artisan test
+vendor/bin/pint --test
+```
+
+The supplied `phpunit.xml` uses an in-memory SQLite database. On Windows, if SQLite PDO is installed but not globally enabled:
+
+```powershell
+php -d extension=pdo_sqlite -d extension=sqlite3 vendor\bin\phpunit
+```
+
+## Performance notes
+
+The schema includes foreign-key indexes, the enrollment uniqueness index, `(status, semester)`, and `(academic_year, semester)`. Add further indexes only after inspecting real 5-million-row query plans with `EXPLAIN ANALYZE`; unnecessary indexes increase seed time, storage, and write cost.

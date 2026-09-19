@@ -1,4 +1,5 @@
 <?php
+
 namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
@@ -14,17 +15,18 @@ class StudentSeeder extends Seeder
         DB::disableQueryLog();
 
         $data = [];
+        $timestamp = now();
 
         for ($i = 1; $i <= 10000; $i++) {
             $data[] = [
-                'nim'   => str_pad($i, 8, '0', STR_PAD_LEFT),
-                'name'  => 'Student ' . $i,
+                'nim' => str_pad($i, 8, '0', STR_PAD_LEFT),
+                'name' => 'Student '.$i,
                 'email' => "student{$i}@test.com",
-                'created_at' => now(),
-                'updated_at' => now(),
+                'created_at' => $timestamp,
+                'updated_at' => $timestamp,
             ];
         }
 
-        DB::table('students')->insert($data);
+        DB::table('students')->insertOrIgnore($data);
     }
 }
