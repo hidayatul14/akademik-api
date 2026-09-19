@@ -52,6 +52,12 @@ Verify the result:
 SELECT COUNT(*) FROM enrollments;
 ```
 
+After a large seed on MySQL/MariaDB, refresh optimizer statistics before benchmarking list queries:
+
+```sql
+ANALYZE TABLE students, courses, enrollments;
+```
+
 For a lightweight development dataset, use a smaller count on a fresh database:
 
 ```bash
@@ -119,4 +125,4 @@ php -d extension=pdo_sqlite -d extension=sqlite3 vendor\bin\phpunit
 
 ## Performance notes
 
-The schema includes foreign-key indexes, the enrollment uniqueness index, `(status, semester)`, and `(academic_year, semester)`. Add further indexes only after inspecting real 5-million-row query plans with `EXPLAIN ANALYZE`; unnecessary indexes increase seed time, storage, and write cost.
+The schema includes foreign-key indexes, the enrollment uniqueness index, `(status, semester)`, and `(academic_year, semester)`. The active-row indexes `(deleted_at, status, semester)` and `(deleted_at, semester)` cover exact pagination counts for unfiltered and quick-filtered KRS lists. Pagination counts directly from `enrollments` when search and filters do not need student/course columns. For these queries, the API also pages enrollment IDs first, then joins only the current page's rows; this avoids an optimizer plan that sorts millions of joined rows for a 25-row page. Related-field search, filters, and sorts retain the joined query for correct results. Add further indexes only after inspecting real 5-million-row query plans with `EXPLAIN ANALYZE`; unnecessary indexes increase seed time, storage, and write cost.

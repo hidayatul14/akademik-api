@@ -24,7 +24,7 @@ class CourseController extends Controller
         $validated = $request->validated();
 
         return response()->json([
-            'message' => 'Course created successfully',
+            'message' => 'Mata kuliah berhasil ditambahkan.',
             'data' => Course::create($validated),
         ], 201);
     }
@@ -38,7 +38,7 @@ class CourseController extends Controller
         $course->update($validated);
 
         return response()->json([
-            'message' => 'Course updated successfully',
+            'message' => 'Mata kuliah berhasil diperbarui.',
             'data' => $course,
         ]);
     }
@@ -49,13 +49,13 @@ class CourseController extends Controller
 
         if ($course->enrollments()->exists()) {
             return response()->json([
-                'message' => 'Course cannot be deleted while enrollment records still reference it.',
+                'message' => 'Mata kuliah tidak dapat dihapus karena masih digunakan pada data KRS.',
             ], 409);
         }
 
         $course->delete();
 
-        return response()->json(['message' => 'Deleted successfully']);
+        return response()->json(['message' => 'Mata kuliah berhasil dihapus.']);
     }
 
     public function search(Request $request)

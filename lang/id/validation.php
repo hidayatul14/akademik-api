@@ -1,0 +1,50 @@
+<?php
+
+return [
+    'array' => ':attribute harus berupa daftar.',
+    'between' => [
+        'numeric' => ':attribute harus bernilai antara :min dan :max.',
+        'string' => ':attribute harus terdiri dari :min sampai :max karakter.',
+    ],
+    'digits_between' => ':attribute harus terdiri dari :min sampai :max angka.',
+    'email' => ':attribute harus berupa alamat email yang valid.',
+    'exists' => ':attribute yang dipilih tidak ditemukan.',
+    'in' => ':attribute yang dipilih tidak valid.',
+    'integer' => ':attribute harus berupa bilangan bulat.',
+    'max' => [
+        'array' => ':attribute tidak boleh lebih dari :max item.',
+        'numeric' => ':attribute tidak boleh lebih dari :max.',
+        'string' => ':attribute tidak boleh lebih dari :max karakter.',
+    ],
+    'min' => [
+        'array' => ':attribute harus memiliki minimal :min item.',
+        'numeric' => ':attribute harus bernilai minimal :min.',
+        'string' => ':attribute harus terdiri dari minimal :min karakter.',
+    ],
+    'present' => ':attribute harus disertakan.',
+    'regex' => 'Format :attribute tidak valid.',
+    'required' => ':attribute wajib diisi.',
+    'required_without' => ':attribute wajib diisi jika :values tidak diisi.',
+    'string' => ':attribute harus berupa teks.',
+    'unique' => ':attribute sudah digunakan.',
+
+    'attributes' => [
+        'nim' => 'NIM',
+        'name' => 'nama',
+        'student_name' => 'nama mahasiswa',
+        'email' => 'email',
+        'code' => 'kode mata kuliah',
+        'course_code' => 'kode mata kuliah',
+        'course_name' => 'nama mata kuliah',
+        'credits' => 'SKS',
+        'student_id' => 'mahasiswa',
+        'course_id' => 'mata kuliah',
+        'academic_year' => 'tahun ajaran',
+        'semester' => 'semester',
+        'status' => 'status',
+        'search' => 'pencarian',
+        'page' => 'halaman',
+        'page_size' => 'jumlah data per halaman',
+        'logic' => 'logika filter',
+    ],
+];

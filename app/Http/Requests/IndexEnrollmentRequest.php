@@ -40,10 +40,10 @@ class IndexEnrollmentRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'sorts.*.field.in' => 'The selected sort field is not supported.',
-            'sorts.*.dir.in' => 'Sort direction must be asc or desc.',
-            'filters.*.field.in' => 'The selected filter field is not supported.',
-            'filters.*.operator.in' => 'The selected filter operator is not supported.',
+            'sorts.*.field.in' => 'Kolom pengurutan tidak didukung.',
+            'sorts.*.dir.in' => 'Arah pengurutan harus naik atau turun.',
+            'filters.*.field.in' => 'Kolom filter tidak didukung.',
+            'filters.*.operator.in' => 'Operator filter tidak didukung.',
         ];
     }
 
@@ -56,15 +56,15 @@ class IndexEnrollmentRequest extends FormRequest
                     $value = $filter['value'] ?? null;
 
                     if ($operator === 'in' && (! is_array($value) || $value === [])) {
-                        $validator->errors()->add("filters.{$index}.value", 'The in operator requires a non-empty array.');
+                        $validator->errors()->add("filters.{$index}.value", 'Operator ini memerlukan daftar nilai yang tidak kosong.');
                     }
 
                     if ($operator === 'between' && (! is_array($value) || count($value) !== 2)) {
-                        $validator->errors()->add("filters.{$index}.value", 'The between operator requires exactly two values.');
+                        $validator->errors()->add("filters.{$index}.value", 'Operator di antara memerlukan tepat dua nilai.');
                     }
 
                     if (in_array($operator, ['equal', 'contains', 'startsWith'], true) && ! is_scalar($value)) {
-                        $validator->errors()->add("filters.{$index}.value", 'This operator requires a single value.');
+                        $validator->errors()->add("filters.{$index}.value", 'Operator ini memerlukan satu nilai.');
                     }
                 }
             },

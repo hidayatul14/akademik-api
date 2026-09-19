@@ -39,19 +39,29 @@ class EnrollmentController extends Controller
     public function index(IndexEnrollmentRequest $request)
     {
         $validated = $request->validated();
-        $query = $this->baseQuery();
+        $countQuery = $this->countNeedsJoins($validated) ? $this->baseQuery() : Enrollment::query();
+        $this->applyQueryConstraints($countQuery, $validated);
 
-        $this->applyQueryConstraints($query, $validated);
+        $pageNeedsJoins = $this->pageNeedsJoins($validated);
+        $pageQuery = $pageNeedsJoins ? $this->baseQuery() : Enrollment::query()->select('enrollments.id');
+        $this->applyQueryConstraints($pageQuery, $validated);
 
         if (! empty($validated['sorts'])) {
             foreach ($validated['sorts'] as $sort) {
-                $query->orderBy(self::FIELD_MAP[$sort['field']], strtolower($sort['dir']));
+                $pageQuery->orderBy(self::FIELD_MAP[$sort['field']], strtolower($sort['dir']));
             }
         } else {
-            $query->orderBy('enrollments.id');
+            $pageQuery->orderBy('enrollments.id');
         }
 
-        return $query->paginate((int) ($validated['page_size'] ?? 25));
+        $page = $pageQuery->paginate((int) ($validated['page_size'] ?? 25), ['*'], 'page', null, $countQuery->count('enrollments.id'));
+
+        if (! $pageNeedsJoins && $page->getCollection()->isNotEmpty()) {
+            $rows = $this->baseQuery()->whereIn('enrollments.id', $page->getCollection()->pluck('id'))->get()->keyBy('id');
+            $page->setCollection($page->getCollection()->map(fn (Enrollment $enrollment) => $rows->get($enrollment->id)));
+        }
+
+        return $page;
     }
 
     public function store(StoreEnrollmentRequest $request)
@@ -88,7 +98,7 @@ class EnrollmentController extends Controller
             });
 
             return response()->json([
-                'message' => 'Enrollment created successfully',
+                'message' => 'Data KRS berhasil dibuat.',
                 'data' => $enrollment,
             ], 201);
         } catch (QueryException $exception) {
@@ -96,15 +106,15 @@ class EnrollmentController extends Controller
 
             if ($this->isIntegrityViolation($exception)) {
                 return response()->json([
-                    'message' => 'The enrollment or related student/course data already exists.',
+                    'message' => 'Data KRS, mahasiswa, atau mata kuliah tersebut sudah ada.',
                 ], 422);
             }
 
-            return response()->json(['message' => 'Enrollment could not be created. Please try again.'], 500);
+            return response()->json(['message' => 'Data KRS gagal dibuat. Silakan coba lagi.'], 500);
         } catch (Throwable $exception) {
             report($exception);
 
-            return response()->json(['message' => 'Enrollment could not be created. Please try again.'], 500);
+            return response()->json(['message' => 'Data KRS gagal dibuat. Silakan coba lagi.'], 500);
         }
     }
 
@@ -139,21 +149,21 @@ class EnrollmentController extends Controller
             });
 
             return response()->json([
-                'message' => 'Enrollment updated successfully',
+                'message' => 'Data KRS berhasil diperbarui.',
                 'data' => $result,
             ]);
         } catch (QueryException $exception) {
             report($exception);
 
             if ($this->isIntegrityViolation($exception)) {
-                return response()->json(['message' => 'The updated data conflicts with an existing record.'], 422);
+                return response()->json(['message' => 'Perubahan tersebut bertentangan dengan data yang sudah ada.'], 422);
             }
 
-            return response()->json(['message' => 'Enrollment could not be updated. Please try again.'], 500);
+            return response()->json(['message' => 'Data KRS gagal diperbarui. Silakan coba lagi.'], 500);
         } catch (Throwable $exception) {
             report($exception);
 
-            return response()->json(['message' => 'Enrollment could not be updated. Please try again.'], 500);
+            return response()->json(['message' => 'Data KRS gagal diperbarui. Silakan coba lagi.'], 500);
         }
     }
 
@@ -162,7 +172,7 @@ class EnrollmentController extends Controller
         $enrollment = Enrollment::findOrFail($id);
         $enrollment->delete();
 
-        return response()->json(['message' => 'Enrollment deleted successfully']);
+        return response()->json(['message' => 'Data KRS berhasil dihapus.']);
     }
 
     public function export(IndexEnrollmentRequest $request)
@@ -206,17 +216,16 @@ class EnrollmentController extends Controller
     public function stats()
     {
         DB::disableQueryLog();
-        $total = Enrollment::count();
         $statuses = Enrollment::select('status', DB::raw('count(*) as total'))
             ->groupBy('status')
             ->pluck('total', 'status');
 
         return response()->json([
-            'total' => $total,
-            'approved' => $statuses['APPROVED'] ?? 0,
-            'draft' => $statuses['DRAFT'] ?? 0,
-            'rejected' => $statuses['REJECTED'] ?? 0,
-            'submitted' => $statuses['SUBMITTED'] ?? 0,
+            'total' => $statuses->sum(),
+            'approved' => (int) ($statuses['APPROVED'] ?? 0),
+            'draft' => (int) ($statuses['DRAFT'] ?? 0),
+            'rejected' => (int) ($statuses['REJECTED'] ?? 0),
+            'submitted' => (int) ($statuses['SUBMITTED'] ?? 0),
         ]);
     }
 
@@ -271,6 +280,36 @@ class EnrollmentController extends Controller
         if (! empty($validated['filters'])) {
             $this->applyFilters($query, $validated['filters'], strtoupper($validated['logic'] ?? 'AND'));
         }
+    }
+
+    private function countNeedsJoins(array $validated): bool
+    {
+        if (! empty($validated['search'])) {
+            return true;
+        }
+
+        foreach ($validated['filters'] ?? [] as $filter) {
+            if (! str_starts_with(self::FIELD_MAP[$filter['field']], 'enrollments.')) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function pageNeedsJoins(array $validated): bool
+    {
+        if ($this->countNeedsJoins($validated)) {
+            return true;
+        }
+
+        foreach ($validated['sorts'] ?? [] as $sort) {
+            if (! str_starts_with(self::FIELD_MAP[$sort['field']], 'enrollments.')) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function isIntegrityViolation(QueryException $exception): bool

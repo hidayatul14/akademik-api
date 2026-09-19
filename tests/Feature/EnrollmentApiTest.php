@@ -7,6 +7,7 @@ use App\Models\Enrollment;
 use App\Models\Student;
 use Database\Seeders\EnrollmentSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class EnrollmentApiTest extends TestCase
@@ -80,6 +81,91 @@ class EnrollmentApiTest extends TestCase
         ], [], [], ['HTTP_ACCEPT' => 'application/json']);
 
         $response->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.nim', '87654321');
+    }
+
+    public function test_pagination_counts_without_unnecessary_joins(): void
+    {
+        $student = Student::create(['nim' => '76543210', 'name' => 'Rina Putri', 'email' => 'rina@example.test']);
+        $course = Course::create(['code' => 'IF201', 'name' => 'Basis Data', 'credits' => 3]);
+        Enrollment::create(['student_id' => $student->id, 'course_id' => $course->id, 'academic_year' => '2026/2027', 'semester' => 'GANJIL', 'status' => 'DRAFT']);
+
+        DB::enableQueryLog();
+        DB::flushQueryLog();
+
+        $this->getJson('/api/enrollments?page=1&page_size=25')
+            ->assertOk()
+            ->assertJsonPath('total', 1)
+            ->assertJsonCount(1, 'data');
+
+        $countSql = collect(DB::getQueryLog())->pluck('query')->first(fn (string $sql) => str_contains(strtolower($sql), 'count('));
+        $this->assertNotNull($countSql);
+        $this->assertStringNotContainsString('join', strtolower($countSql));
+
+        DB::flushQueryLog();
+        $this->call('GET', '/api/enrollments', [
+            'filters' => [['field' => 'status', 'operator' => 'equal', 'value' => 'DRAFT']],
+        ], [], [], ['HTTP_ACCEPT' => 'application/json'])
+            ->assertOk()
+            ->assertJsonPath('total', 1);
+
+        $countSql = collect(DB::getQueryLog())->pluck('query')->first(fn (string $sql) => str_contains(strtolower($sql), 'count('));
+        $this->assertNotNull($countSql);
+        $this->assertStringNotContainsString('join', strtolower($countSql));
+
+        DB::flushQueryLog();
+        $this->call('GET', '/api/enrollments', [
+            'filters' => [['field' => 'student_name', 'operator' => 'equal', 'value' => 'Rina Putri']],
+        ], [], [], ['HTTP_ACCEPT' => 'application/json'])
+            ->assertOk()
+            ->assertJsonPath('total', 1);
+
+        $countSql = collect(DB::getQueryLog())->pluck('query')->first(fn (string $sql) => str_contains(strtolower($sql), 'count('));
+        $this->assertNotNull($countSql);
+        $this->assertStringContainsString('join', strtolower($countSql));
+        DB::disableQueryLog();
+    }
+
+    public function test_enrollment_only_sort_preserves_row_order_across_pages(): void
+    {
+        $firstStudent = Student::create(['nim' => '12345678', 'name' => 'Mahasiswa Satu', 'email' => 'satu@example.test']);
+        $secondStudent = Student::create(['nim' => '87654321', 'name' => 'Mahasiswa Dua', 'email' => 'dua@example.test']);
+        $course = Course::create(['code' => 'IF202', 'name' => 'Struktur Data', 'credits' => 3]);
+        Enrollment::create(['student_id' => $firstStudent->id, 'course_id' => $course->id, 'academic_year' => '2026/2027', 'semester' => 'GANJIL', 'status' => 'APPROVED']);
+        Enrollment::create(['student_id' => $secondStudent->id, 'course_id' => $course->id, 'academic_year' => '2026/2027', 'semester' => 'GANJIL', 'status' => 'DRAFT']);
+
+        $query = [
+            'page_size' => 1,
+            'sorts' => [['field' => 'status', 'dir' => 'desc']],
+        ];
+
+        $this->call('GET', '/api/enrollments', $query + ['page' => 1], [], [], ['HTTP_ACCEPT' => 'application/json'])
+            ->assertOk()
+            ->assertJsonPath('total', 2)
+            ->assertJsonPath('data.0.nim', '87654321')
+            ->assertJsonPath('data.0.status', 'DRAFT');
+
+        $this->call('GET', '/api/enrollments', $query + ['page' => 2], [], [], ['HTTP_ACCEPT' => 'application/json'])
+            ->assertOk()
+            ->assertJsonPath('total', 2)
+            ->assertJsonPath('data.0.nim', '12345678')
+            ->assertJsonPath('data.0.status', 'APPROVED');
+    }
+
+    public function test_stats_count_active_enrollments_by_status(): void
+    {
+        $student = Student::create(['nim' => '23456789', 'name' => 'Mahasiswa Statistik', 'email' => 'statistik@example.test']);
+        $course = Course::create(['code' => 'IF203', 'name' => 'Sistem Operasi', 'credits' => 3]);
+        Enrollment::create(['student_id' => $student->id, 'course_id' => $course->id, 'academic_year' => '2026/2027', 'semester' => 'GANJIL', 'status' => 'DRAFT']);
+        $deleted = Enrollment::create(['student_id' => $student->id, 'course_id' => $course->id, 'academic_year' => '2026/2027', 'semester' => 'GENAP', 'status' => 'APPROVED']);
+        $deleted->delete();
+
+        $this->getJson('/api/enrollments/stats')->assertOk()->assertExactJson([
+            'total' => 1,
+            'approved' => 0,
+            'draft' => 1,
+            'rejected' => 0,
+            'submitted' => 0,
+        ]);
     }
 
     public function test_between_filter_requires_exactly_two_values(): void

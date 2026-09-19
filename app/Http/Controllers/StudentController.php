@@ -25,7 +25,7 @@ class StudentController extends Controller
         $validated = $request->validated();
 
         return response()->json([
-            'message' => 'Student created successfully',
+            'message' => 'Mahasiswa berhasil ditambahkan.',
             'data' => Student::create($validated),
         ], 201);
     }
@@ -39,7 +39,7 @@ class StudentController extends Controller
         $student->update($validated);
 
         return response()->json([
-            'message' => 'Student updated successfully',
+            'message' => 'Data mahasiswa berhasil diperbarui.',
             'data' => $student,
         ]);
     }
@@ -50,13 +50,13 @@ class StudentController extends Controller
 
         if ($student->enrollments()->exists()) {
             return response()->json([
-                'message' => 'Student cannot be deleted while enrollment records still reference it.',
+                'message' => 'Mahasiswa tidak dapat dihapus karena masih digunakan pada data KRS.',
             ], 409);
         }
 
         $student->delete();
 
-        return response()->json(['message' => 'Deleted successfully']);
+        return response()->json(['message' => 'Mahasiswa berhasil dihapus.']);
     }
 
     public function search(Request $request)
