@@ -11,8 +11,8 @@ WORKDIR /var/www
 
 COPY . .
 
-RUN composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader \
-    && mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs bootstrap/cache \
+RUN mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs bootstrap/cache \
+    && composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader \
     && chmod -R ug+rwX storage bootstrap/cache
 
 EXPOSE 8000
