@@ -26,6 +26,8 @@ class IndexEnrollmentRequest extends FormRequest
             'page' => ['sometimes', 'integer', 'min:1'],
             'page_size' => ['sometimes', 'integer', 'min:1', 'max:100'],
             'search' => ['sometimes', 'nullable', 'string', 'max:100'],
+            'quick_status' => ['sometimes', 'nullable', Rule::in(['DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED'])],
+            'quick_semester' => ['sometimes', 'nullable', Rule::in(['GANJIL', 'GENAP'])],
             'logic' => ['sometimes', Rule::in(['AND', 'OR', 'and', 'or'])],
             'sorts' => ['sometimes', 'array', 'max:9'],
             'sorts.*.field' => ['required', 'string', Rule::in($fields)],

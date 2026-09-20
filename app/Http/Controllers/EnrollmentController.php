@@ -15,6 +15,8 @@ use Throwable;
 
 class EnrollmentController extends Controller
 {
+    private const SEARCH_ID_LIMIT = 1000;
+
     private const FIELD_MAP = [
         'student_nim' => 'students.nim',
         'student_name' => 'students.name',
@@ -43,7 +45,9 @@ class EnrollmentController extends Controller
         $this->applyQueryConstraints($countQuery, $validated);
 
         $pageNeedsJoins = $this->pageNeedsJoins($validated);
-        $pageQuery = $pageNeedsJoins ? $this->baseQuery() : Enrollment::query()->select('enrollments.id');
+        $pageQuery = $pageNeedsJoins
+            ? $this->baseQuery($this->orderedMasterTable($validated))
+            : Enrollment::query()->select('enrollments.id');
         $this->applyQueryConstraints($pageQuery, $validated);
 
         if (! empty($validated['sorts'])) {
@@ -229,23 +233,48 @@ class EnrollmentController extends Controller
         ]);
     }
 
-    private function baseQuery(): Builder
+    private function baseQuery(?string $firstTable = null): Builder
     {
-        return Enrollment::query()
-            ->join('students', 'students.id', '=', 'enrollments.student_id')
-            ->join('courses', 'courses.id', '=', 'enrollments.course_id')
-            ->select(
-                'enrollments.id',
-                'students.nim',
-                'students.name as student_name',
-                'students.email',
-                'courses.code as course_code',
-                'courses.name as course_name',
-                'courses.credits',
-                'enrollments.academic_year',
-                'enrollments.semester',
-                'enrollments.status'
-            );
+        $query = Enrollment::query();
+
+        if ($firstTable === 'courses') {
+            // Preserve index order instead of sorting millions of joined rows.
+            $query->fromRaw('courses STRAIGHT_JOIN enrollments ON enrollments.course_id = courses.id STRAIGHT_JOIN students ON students.id = enrollments.student_id');
+        } elseif ($firstTable === 'students') {
+            $query->fromRaw('students STRAIGHT_JOIN enrollments ON enrollments.student_id = students.id STRAIGHT_JOIN courses ON courses.id = enrollments.course_id');
+        } else {
+            $query->join('students', 'students.id', '=', 'enrollments.student_id')
+                ->join('courses', 'courses.id', '=', 'enrollments.course_id');
+        }
+
+        return $query->select(
+            'enrollments.id',
+            'students.nim',
+            'students.name as student_name',
+            'students.email',
+            'courses.code as course_code',
+            'courses.name as course_name',
+            'courses.credits',
+            'enrollments.academic_year',
+            'enrollments.semester',
+            'enrollments.status'
+        );
+    }
+
+    private function orderedMasterTable(array $validated): ?string
+    {
+        if (! in_array(DB::connection()->getDriverName(), ['mysql', 'mariadb'], true)
+            || count($validated['sorts'] ?? []) !== 1
+            || ! empty($validated['search'])
+            || ! empty($validated['filters'])) {
+            return null;
+        }
+
+        return match (self::FIELD_MAP[$validated['sorts'][0]['field']]) {
+            'courses.code', 'courses.name' => 'courses',
+            'students.nim', 'students.name', 'students.email' => 'students',
+            default => null,
+        };
     }
 
     private function applyFilters(Builder $query, array $filters, string $logic): void
@@ -268,13 +297,16 @@ class EnrollmentController extends Controller
 
     private function applyQueryConstraints(Builder $query, array $validated): void
     {
+        if (! empty($validated['quick_status'])) {
+            $query->where('enrollments.status', $validated['quick_status']);
+        }
+
+        if (! empty($validated['quick_semester'])) {
+            $query->where('enrollments.semester', $validated['quick_semester']);
+        }
+
         if (! empty($validated['search'])) {
-            $search = $validated['search'];
-            $query->where(function ($group) use ($search) {
-                $group->whereLike('students.nim', "%{$search}%")
-                    ->orWhereLike('students.name', "%{$search}%")
-                    ->orWhereLike('courses.code', "%{$search}%");
-            });
+            $this->applySearch($query, $validated['search']);
         }
 
         if (! empty($validated['filters'])) {
@@ -282,12 +314,46 @@ class EnrollmentController extends Controller
         }
     }
 
-    private function countNeedsJoins(array $validated): bool
+    private function applySearch(Builder $query, string $search): void
     {
-        if (! empty($validated['search'])) {
-            return true;
+        $students = Student::query()->select('id')->where(function (Builder $matches) use ($search) {
+            $matches->whereLike('nim', "%{$search}%")
+                ->orWhereLike('name', "%{$search}%");
+        });
+        $courses = Course::query()->select('id')->whereLike('code', "%{$search}%");
+
+        $studentIds = (clone $students)->limit(self::SEARCH_ID_LIMIT + 1)->pluck('id')->all();
+        $courseIds = (clone $courses)->limit(self::SEARCH_ID_LIMIT + 1)->pluck('id')->all();
+
+        if (count($studentIds) <= self::SEARCH_ID_LIMIT && count($courseIds) <= self::SEARCH_ID_LIMIT) {
+            if ($studentIds === [] && $courseIds === []) {
+                $query->whereIn('enrollments.id', []);
+
+                return;
+            }
+
+            $query->where(function (Builder $group) use ($studentIds, $courseIds) {
+                if ($studentIds !== []) {
+                    $group->whereIn('enrollments.student_id', $studentIds);
+                }
+                if ($courseIds !== []) {
+                    $studentIds !== []
+                        ? $group->orWhereIn('enrollments.course_id', $courseIds)
+                        : $group->whereIn('enrollments.course_id', $courseIds);
+                }
+            });
+
+            return;
         }
 
+        $query->where(function (Builder $group) use ($students, $courses) {
+            $group->whereIn('enrollments.student_id', $students)
+                ->orWhereIn('enrollments.course_id', $courses);
+        });
+    }
+
+    private function countNeedsJoins(array $validated): bool
+    {
         foreach ($validated['filters'] ?? [] as $filter) {
             if (! str_starts_with(self::FIELD_MAP[$filter['field']], 'enrollments.')) {
                 return true;

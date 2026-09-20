@@ -36,6 +36,28 @@ php artisan migrate
 php artisan serve --host=127.0.0.1 --port=8000
 ```
 
+## Docker deployment (demo)
+
+The Dockerfile includes both MySQL/MariaDB and PostgreSQL PDO drivers. It runs migrations when the container starts; it never generates `APP_KEY` or connects to the database during image build. Supply these environment variables in the hosting dashboard (do not commit a production `.env`):
+
+```dotenv
+APP_ENV=production
+APP_DEBUG=false
+APP_KEY=base64:YOUR_GENERATED_KEY
+APP_URL=https://YOUR_API_HOST
+DB_CONNECTION=pgsql
+DB_URL=YOUR_DATABASE_CONNECTION_URL
+CORS_ALLOWED_ORIGINS=https://YOUR_FRONTEND_HOST
+LOG_CHANNEL=stderr
+SESSION_DRIVER=cookie
+CACHE_STORE=file
+QUEUE_CONNECTION=sync
+```
+
+For MySQL/MariaDB, set `DB_CONNECTION=mysql` (or `mariadb`) and either `DB_URL` or the usual `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, and `DB_PASSWORD` variables. Generate a key locally with `php artisan key:generate --show` and save its output as the hosting secret `APP_KEY`. Set the service health-check path to `/up`. The built-in PHP server is adequate for a short-lived assessment demo; use a proper PHP-FPM/web-server setup for sustained production traffic.
+
+Migrations do not seed data. After the first deployment, run a small demo seed using the host's one-off command facility if needed; do not automatically seed five million rows on a small hosted database. The local five-million-row dataset and CSV verification are separate from the hosted demo dataset.
+
 ## Dataset generation
 
 The scalable seeder accepts a target row count and insert batch size:
@@ -82,11 +104,13 @@ Student and course CRUD endpoints are available under `/api/students` and `/api/
 - `page`: page number
 - `page_size`: 1–100
 - `search`: NIM, student name, or course code
+- `quick_status`, `quick_semester`: quick filters, always combined with AND
 - `logic`: `AND` or `OR`
 - `sorts[index][field|dir]`: ordered multi-column sorting
 - `filters[index][field|operator|value]`: advanced conditions
 
 Public fields and operators are explicitly whitelisted. Raw SQL and arbitrary database identifiers are never accepted.
+Search and quick filters narrow the result first; `logic` applies only within the advanced `filters` group. This behavior is identical for list and CSV export. Live search resolves up to 1,000 matching student/course IDs into bounded lists for indexed enrollment lookups. Broader terms fall back to subqueries without loading an unbounded set of IDs into PHP memory.
 
 Supported operators:
 
@@ -125,4 +149,4 @@ php -d extension=pdo_sqlite -d extension=sqlite3 vendor\bin\phpunit
 
 ## Performance notes
 
-The schema includes foreign-key indexes, the enrollment uniqueness index, `(status, semester)`, and `(academic_year, semester)`. The active-row indexes `(deleted_at, status, semester)` and `(deleted_at, semester)` cover exact pagination counts for unfiltered and quick-filtered KRS lists. Pagination counts directly from `enrollments` when search and filters do not need student/course columns. For these queries, the API also pages enrollment IDs first, then joins only the current page's rows; this avoids an optimizer plan that sorts millions of joined rows for a 25-row page. Related-field search, filters, and sorts retain the joined query for correct results. Add further indexes only after inspecting real 5-million-row query plans with `EXPLAIN ANALYZE`; unnecessary indexes increase seed time, storage, and write cost.
+The schema includes foreign-key indexes, the enrollment uniqueness index, `(status, semester)`, and `(academic_year, semester)`. The active-row indexes `(deleted_at, status, semester)` and `(deleted_at, semester)` cover exact pagination counts for unfiltered and quick-filtered KRS lists. Pagination counts directly from `enrollments` when search and filters do not need student/course columns. For these queries, the API also pages enrollment IDs first, then joins only the current page's rows. Single-column sorting on indexed student/course fields uses a MySQL/MariaDB-specific ordered join so the database can start from the sorted master table instead of sorting millions of joined rows. Other database drivers and multi-column sorts use the portable joined query. Indexes on `courses.name` and `students.name` support these ordered joins; code, NIM, and email already have unique indexes. Check query plans again if data distribution or deployment database changes.

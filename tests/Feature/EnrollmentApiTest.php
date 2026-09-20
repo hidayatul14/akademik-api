@@ -102,6 +102,16 @@ class EnrollmentApiTest extends TestCase
         $this->assertStringNotContainsString('join', strtolower($countSql));
 
         DB::flushQueryLog();
+        $this->getJson('/api/enrollments?search=Rina')
+            ->assertOk()
+            ->assertJsonPath('total', 1)
+            ->assertJsonPath('data.0.nim', '76543210');
+
+        $countSql = collect(DB::getQueryLog())->pluck('query')->first(fn (string $sql) => str_contains(strtolower($sql), 'count('));
+        $this->assertNotNull($countSql);
+        $this->assertStringNotContainsString('join', strtolower($countSql));
+
+        DB::flushQueryLog();
         $this->call('GET', '/api/enrollments', [
             'filters' => [['field' => 'status', 'operator' => 'equal', 'value' => 'DRAFT']],
         ], [], [], ['HTTP_ACCEPT' => 'application/json'])
@@ -151,6 +161,25 @@ class EnrollmentApiTest extends TestCase
             ->assertJsonPath('data.0.status', 'APPROVED');
     }
 
+    public function test_course_name_sort_returns_expected_order(): void
+    {
+        $student = Student::create(['nim' => '23456789', 'name' => 'Mahasiswa Uji', 'email' => 'uji@example.test']);
+        $firstCourse = Course::create(['code' => 'IF101', 'name' => 'Algoritma', 'credits' => 3]);
+        $secondCourse = Course::create(['code' => 'IF102', 'name' => 'Zoologi', 'credits' => 2]);
+
+        foreach ([$firstCourse, $secondCourse] as $course) {
+            Enrollment::create(['student_id' => $student->id, 'course_id' => $course->id, 'academic_year' => '2026/2027', 'semester' => 'GANJIL', 'status' => 'DRAFT']);
+        }
+
+        $this->call('GET', '/api/enrollments', [
+            'sorts' => [['field' => 'course_name', 'dir' => 'desc']],
+        ], [], [], ['HTTP_ACCEPT' => 'application/json'])
+            ->assertOk()
+            ->assertJsonPath('total', 2)
+            ->assertJsonPath('data.0.course_name', 'Zoologi')
+            ->assertJsonPath('data.1.course_name', 'Algoritma');
+    }
+
     public function test_stats_count_active_enrollments_by_status(): void
     {
         $student = Student::create(['nim' => '23456789', 'name' => 'Mahasiswa Statistik', 'email' => 'statistik@example.test']);
@@ -175,6 +204,43 @@ class EnrollmentApiTest extends TestCase
         ], [], [], ['HTTP_ACCEPT' => 'application/json']);
 
         $response->assertUnprocessable()->assertJsonValidationErrors('filters.0.value');
+    }
+
+    public function test_quick_filters_remain_and_constraints_when_advanced_filters_use_or(): void
+    {
+        $student = Student::create(['nim' => '56781234', 'name' => 'Mahasiswa Filter', 'email' => 'filter@example.test']);
+        $courses = [
+            Course::create(['code' => 'IF501', 'name' => 'Mata Kuliah Satu', 'credits' => 3]),
+            Course::create(['code' => 'IF502', 'name' => 'Mata Kuliah Dua', 'credits' => 3]),
+            Course::create(['code' => 'IF503', 'name' => 'Mata Kuliah Tiga', 'credits' => 3]),
+        ];
+        Enrollment::create(['student_id' => $student->id, 'course_id' => $courses[0]->id, 'academic_year' => '2026/2027', 'semester' => 'GANJIL', 'status' => 'DRAFT']);
+        Enrollment::create(['student_id' => $student->id, 'course_id' => $courses[1]->id, 'academic_year' => '2026/2027', 'semester' => 'GANJIL', 'status' => 'APPROVED']);
+        Enrollment::create(['student_id' => $student->id, 'course_id' => $courses[2]->id, 'academic_year' => '2026/2027', 'semester' => 'GENAP', 'status' => 'DRAFT']);
+
+        $query = [
+            'quick_status' => 'DRAFT',
+            'quick_semester' => 'GANJIL',
+            'logic' => 'OR',
+            'filters' => [
+                ['field' => 'course_code', 'operator' => 'equal', 'value' => 'IF501'],
+                ['field' => 'course_code', 'operator' => 'equal', 'value' => 'IF502'],
+            ],
+        ];
+
+        $this->call('GET', '/api/enrollments', $query, [], [], ['HTTP_ACCEPT' => 'application/json'])
+            ->assertOk()
+            ->assertJsonPath('total', 1)
+            ->assertJsonPath('data.0.course_code', 'IF501');
+
+        $export = $this->call('GET', '/api/enrollments/export', $query, [], [], ['HTTP_ACCEPT' => 'text/csv'])
+            ->assertOk()
+            ->streamedContent();
+        $this->assertStringContainsString('IF501', $export);
+        $this->assertStringNotContainsString('IF502', $export);
+        $this->assertStringNotContainsString('IF503', $export);
+
+        $this->getJson('/api/enrollments?quick_status=UNKNOWN')->assertUnprocessable();
     }
 
     public function test_export_applies_the_same_search_and_filters_as_the_list(): void
