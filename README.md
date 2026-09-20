@@ -38,6 +38,8 @@ php artisan serve --host=127.0.0.1 --port=8000
 
 ## Docker deployment (demo)
 
+For a free Render demo, create a **Blueprint** from this repository's `render.yaml`. It requests only a free Docker web service and a free Postgres database, and connects them through Render's private database URL. During setup, supply `APP_KEY` as a secret (run `php artisan key:generate --show` locally). Once the frontend URL is known, set `CORS_ALLOWED_ORIGINS` and `APP_URL` in the Render web service's Environment page, then redeploy. Check `https://YOUR_API_HOST/up` and `/api/enrollments` before connecting the frontend.
+
 The Dockerfile includes both MySQL/MariaDB and PostgreSQL PDO drivers. It runs migrations when the container starts; it never generates `APP_KEY` or connects to the database during image build. Supply these environment variables in the hosting dashboard (do not commit a production `.env`):
 
 ```dotenv
@@ -52,11 +54,12 @@ LOG_CHANNEL=stderr
 SESSION_DRIVER=cookie
 CACHE_STORE=file
 QUEUE_CONNECTION=sync
+ACADEMIC_DEMO_SEED_COUNT=1000
 ```
 
 For MySQL/MariaDB, set `DB_CONNECTION=mysql` (or `mariadb`) and either `DB_URL` or the usual `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, and `DB_PASSWORD` variables. Generate a key locally with `php artisan key:generate --show` and save its output as the hosting secret `APP_KEY`. Set the service health-check path to `/up`. The built-in PHP server is adequate for a short-lived assessment demo; use a proper PHP-FPM/web-server setup for sustained production traffic.
 
-Migrations do not seed data. After the first deployment, run a small demo seed using the host's one-off command facility if needed; do not automatically seed five million rows on a small hosted database. The local five-million-row dataset and CSV verification are separate from the hosted demo dataset.
+On hosts without a shell (including Render's free web service), `ACADEMIC_DEMO_SEED_COUNT=1000` seeds a small demo dataset at startup only when the enrollment table is empty. Remove the variable after first deploy if preferred. Never set it to five million on a small hosted database. The local five-million-row dataset and CSV verification are separate from the hosted demo dataset.
 
 ## Dataset generation
 

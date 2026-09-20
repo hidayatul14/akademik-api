@@ -310,5 +310,8 @@ class EnrollmentApiTest extends TestCase
         $this->assertContains(Enrollment::firstOrFail()->student_id, $students->pluck('id'));
         $this->assertContains(Enrollment::firstOrFail()->course_id, $courses->pluck('id'));
         $this->assertSame(20, Enrollment::query()->select('student_id', 'course_id', 'academic_year', 'semester')->distinct()->count());
+
+        $this->artisan('academic:seed', ['count' => 1000, '--if-empty' => true])->assertExitCode(0);
+        $this->assertDatabaseCount('enrollments', 20);
     }
 }

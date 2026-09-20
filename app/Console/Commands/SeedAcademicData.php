@@ -6,12 +6,14 @@ use Database\Seeders\CourseSeeder;
 use Database\Seeders\EnrollmentSeeder;
 use Database\Seeders\StudentSeeder;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\DB;
 
 class SeedAcademicData extends Command
 {
     protected $signature = 'academic:seed
         {count=5000000 : Number of enrollment records to generate}
-        {--chunk=5000 : Rows inserted per database statement}';
+        {--chunk=5000 : Rows inserted per database statement}
+        {--if-empty : Skip seeding when enrollment data already exists}';
 
     protected $description = 'Seed deterministic student, course, and enrollment data in scalable batches';
 
@@ -24,6 +26,12 @@ class SeedAcademicData extends Command
             $this->error('Count must be positive and chunk must be between 100 and 10,000.');
 
             return self::FAILURE;
+        }
+
+        if ($this->option('if-empty') && DB::table('enrollments')->exists()) {
+            $this->components->info('Enrollment data already exists; skipping demo seed.');
+
+            return self::SUCCESS;
         }
 
         config([

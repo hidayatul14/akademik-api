@@ -18,4 +18,4 @@ RUN composer install --no-dev --prefer-dist --no-interaction --optimize-autoload
 EXPOSE 8000
 
 # APP_KEY and database credentials must be supplied by the hosting platform.
-CMD ["sh", "-c", "php artisan migrate --force && exec php artisan serve --host=0.0.0.0 --port=${PORT:-8000}"]
+CMD ["sh", "-c", "php artisan migrate --force && if [ -n \"${ACADEMIC_DEMO_SEED_COUNT:-}\" ]; then php artisan academic:seed \"$ACADEMIC_DEMO_SEED_COUNT\" --chunk=500 --if-empty || exit 1; fi; exec php artisan serve --host=0.0.0.0 --port=${PORT:-8000}"]
