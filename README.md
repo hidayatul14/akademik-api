@@ -1,6 +1,14 @@
-# Academic Enrollment API
+# SIAKAD — Academic Enrollment API
 
 Laravel 12 API for a single-page academic KRS management system. The API is designed for server-side pagination, sorting, searching, advanced filtering, atomic enrollment creation, and large CSV exports.
+
+## Live demo
+
+- [Academic dashboard](https://akademik-frontend-1swy.vercel.app)
+- [Paginated API sample](https://akademik-api-production-6aad.up.railway.app/api/enrollments?page=1&page_size=2)
+- [CSV export](https://akademik-api-production-6aad.up.railway.app/api/enrollments/export)
+
+The Railway demo is initially seeded with **1,000 synthetic enrollments**; the current count may change as visitors test CRUD. The five-million-row dataset is generated and tested locally; it is **not** hosted on Railway. The Railway service currently uses trial credit, so demo availability depends on the account's remaining credit and service status. CRUD endpoints have no authentication: do not submit real student data or secrets.
 
 ## Requirements
 
@@ -36,20 +44,20 @@ php artisan migrate
 php artisan serve --host=127.0.0.1 --port=8000
 ```
 
-## Docker deployment (demo)
+## Railway deployment (demo)
 
-For a free Render demo, create a **Blueprint** from this repository's `render.yaml`. It requests only a free Docker web service and a free Postgres database, and connects them through Render's private database URL. During setup, supply `APP_KEY` as a secret (run `php artisan key:generate --show` locally). Once the frontend URL is known, set `CORS_ALLOWED_ORIGINS` and `APP_URL` in the Render web service's Environment page, then redeploy. Check `https://YOUR_API_HOST/up` and `/api/enrollments` before connecting the frontend.
+The live backend is deployed from this repository's `Dockerfile` alongside a Railway PostgreSQL service named `akademik-db`. The image includes both MySQL/MariaDB and PostgreSQL PDO drivers. It runs migrations when the container starts; it never generates `APP_KEY` or connects to the database during image build. Create `APP_KEY` locally with `php artisan key:generate --show`, and store it in Railway Variables. Do not commit a production `.env`.
 
-The Dockerfile includes both MySQL/MariaDB and PostgreSQL PDO drivers. It runs migrations when the container starts; it never generates `APP_KEY` or connects to the database during image build. Supply these environment variables in the hosting dashboard (do not commit a production `.env`):
+Set these variables on the **API service**, using a Railway reference variable for `DB_URL` (select `akademik-db` → `DATABASE_URL` in the UI):
 
 ```dotenv
 APP_ENV=production
 APP_DEBUG=false
 APP_KEY=base64:YOUR_GENERATED_KEY
-APP_URL=https://YOUR_API_HOST
+APP_URL=https://akademik-api-production-6aad.up.railway.app
 DB_CONNECTION=pgsql
-DB_URL=YOUR_DATABASE_CONNECTION_URL
-CORS_ALLOWED_ORIGINS=https://YOUR_FRONTEND_HOST
+DB_URL=${{akademik-db.DATABASE_URL}}
+CORS_ALLOWED_ORIGINS=https://akademik-frontend-1swy.vercel.app
 LOG_CHANNEL=stderr
 SESSION_DRIVER=cookie
 CACHE_STORE=file
@@ -57,9 +65,9 @@ QUEUE_CONNECTION=sync
 ACADEMIC_DEMO_SEED_COUNT=1000
 ```
 
-For MySQL/MariaDB, set `DB_CONNECTION=mysql` (or `mariadb`) and either `DB_URL` or the usual `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, and `DB_PASSWORD` variables. Generate a key locally with `php artisan key:generate --show` and save its output as the hosting secret `APP_KEY`. Set the service health-check path to `/up`. The built-in PHP server is adequate for a short-lived assessment demo; use a proper PHP-FPM/web-server setup for sustained production traffic.
+Replace `APP_URL` and `CORS_ALLOWED_ORIGINS` if your deployed domains differ. The CORS value must be the exact frontend origin, without an API path or trailing slash. After deploying, verify that `/api/enrollments?page=1&page_size=2` returns JSON with `data` and `total`; an “Online” service badge alone does not prove the database connection works. `ACADEMIC_DEMO_SEED_COUNT=1000` seeds only when the enrollment table is empty. Remove it after the first deploy if preferred; **never seed five million rows on the small hosted database**. The frontend must set `VITE_API_BASE_URL` to this API's public URL plus `/api` and then rebuild.
 
-On hosts without a shell (including Render's free web service), `ACADEMIC_DEMO_SEED_COUNT=1000` seeds a small demo dataset at startup only when the enrollment table is empty. Remove the variable after first deploy if preferred. Never set it to five million on a small hosted database. The local five-million-row dataset and CSV verification are separate from the hosted demo dataset.
+For MySQL/MariaDB elsewhere, set `DB_CONNECTION=mysql` (or `mariadb`) and either `DB_URL` or the usual `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, and `DB_PASSWORD` variables. `render.yaml` remains in the repository as an alternative Render Blueprint, but it is **not used** by the Railway demo and provisions a separate Render database. The built-in PHP server is adequate for a short-lived assessment demo; use a proper PHP-FPM/web-server setup and authentication for sustained production traffic.
 
 ## Dataset generation
 
@@ -102,10 +110,12 @@ php artisan academic:seed 1000 --chunk=500
 
 Student and course CRUD endpoints are available under `/api/students` and `/api/courses`.
 
+The list endpoint returns Laravel's paginator shape (`data`, `current_page`, `per_page`, `total`, and related links), not a custom `success/meta` envelope. Validation errors use HTTP 422; successful enrollment creation uses HTTP 201.
+
 ### Query parameters
 
 - `page`: page number
-- `page_size`: 1–100
+- `page_size`: 1–100 (default 25)
 - `search`: NIM, student name, or course code
 - `quick_status`, `quick_semester`: quick filters, always combined with AND
 - `logic`: `AND` or `OR`
